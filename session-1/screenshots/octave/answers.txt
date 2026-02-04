@@ -1,0 +1,16 @@
+Q2-1-2 commande en plus 
+beaucoup plus de devices que dans le container Alpine normal
+Pourquoi c’est dangereux => Un attaquant peut : 
+    accéder à des devices bas niveau
+    interagir directement avec le kernel
+
+Q2-1-3 commande en plus 
+Les trois capacités d'autorisations sont quasi au maximum.
+
+
+Q2-2-2 commande en plus 
+test de modification d'un ficiher en le mettant en read only (:ro)
+le container voir le fs(file system) de l'hote mais le :ro empeche l'ecriture
+
+
+
