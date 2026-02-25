@@ -1,0 +1,119 @@
+Activités Pratiques¶
+Lancer un Container Simple
+
+Installer Docker si ce n’est pas déjà fait (guide officiel).
+Exécuter un container de test :
+
+  docker run --rm hello-world
+Observer les logs affichés et comprendre les étapes du lancement du container.
+Explorer un Container en Interactif
+
+Lancer un container interactif basé sur alpine :
+
+docker run -it --rm alpine sh
+Tester des commandes Linux dans le container (ls, pwd, whoami).
+Analyser les ressources système d’un container
+
+Lancer un container et surveiller ses ressources :
+
+docker run -d --name test-container nginx
+docker stats test-container
+Observer la consommation de CPU et mémoire.
+Lister les capacités d’un container
+
+Doc sur les capabilities Linux
+
+Vérifier les permissions :
+
+docker run --rm --cap-add=SYS_ADMIN alpine sh -c 'cat /proc/self/status
+
+
+
+
+
+
+Activités Pratiques¶
+Tester un Container avec des Permissions Élevées
+
+Lancer un container en mode privilégié et exécuter une commande système :
+
+docker run --rm --privileged alpine sh -c 'echo hello from privileged mode'
+Observer pourquoi cette pratique est dangereuse.
+Simuler une Évasion de Container
+
+Lancer un container et monter le système de fichiers de l’hôte :
+
+docker run --rm -v /:/mnt alpine sh -c 'ls /mnt'
+Quelles sont les implications de cette faille de configuration ?
+Créer une Image Sécurisée
+
+Écrire un Dockerfile minimaliste :
+
+FROM alpine
+RUN adduser -D appuser
+USER appuser
+CMD ["echo", "Container sécurisé!"]
+Construire et exécuter l’image.
+Afficher l'id et l'uid de cet utilisateur
+Restreindre l’accès réseau d’un container
+
+Bloquer la connexion internet dans un container :
+
+docker network disconnect bridge mon-container
+Tester l’accès internet avec par exemple ping google.com.
+
+Télécharger et Scanner une Image
+
+Télécharger une image vulnérable et l’analyser avec Trivy :
+
+docker pull vulnerables/web-dvwa
+trivy image vulnerables/web-dvwa
+Faites un scan et sauvegarder le résultat en json
+Faites un rapide résumé des vulnérabilités de cette image
+Scanner une Image pour Détecter les Vulnérabilités
+
+Analyser une image avec Grype :
+
+grype alpine:latest
+Comparer votre image build avec l'image alpine:latest
+Quelles sont les différences entre grype et trivy ?
+Dockerfile - Run as User
+
+Création d'un Dockerfile avec un user dédié
+
+FROM node:18-alpine
+WORKDIR /app
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+COPY . .
+RUN chown -R appuser:appgroup /app
+USER appuser
+CMD ["node", "app.js"]
+Builder et vérifier en éxecutant la commande whoami dans le container utilisé
+Dockerfile - Run light!
+
+Créer 2 Dockerfile pour build une application en go qui output du texte.
+Application en golang :
+
+
+package main
+import "fmt"
+func main() {
+  fmt.Println("ECE, 2K26!")
+}
+- Build un premier Dockerfile
+
+FROM golang:1.19 AS builder
+WORKDIR /app
+COPY main.go .
+RUN go build -o monapp main.go
+FROM gcr.io/distroless/static-debian12
+COPY --from=builder /app/monapp /
+CMD ["/monapp"]
+- Build le deuxième
+
+FROM golang:1.19
+WORKDIR /app
+COPY main.go .
+RUN go build -o monapp main.go
+CMD ["./monapp"]
+- Comparer la taille des images après le build, et exécuter les 2 containers.
