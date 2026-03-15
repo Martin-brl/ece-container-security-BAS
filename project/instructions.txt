@@ -1,0 +1,233 @@
+Présentation du projet final
+Projet Étudiant : "Minecraft Secure Cluster"¶
+Objectif 🎯¶
+Déployer un serveur Minecraft sécurisé dans Kubernetes avec une CI/CD contrôlée par RBAC.
+
+Stack : GitLab CI + Kind + Trivy/Cosign + Kubernetes RBAC
+
+Outils : Helm, Kubectl, Kind, Docker
+
+Livrables Attendus 📦¶
+Dépôt Git en .zip à mettre dans votre dossier sur SharePoint. Rappel mon mail pour partager le dossier ; eloutsch@omnesintervenant.com .
+
+Documentation des choix de sécurité
+
+Capture d'écran du serveur Minecraft accessible
+
+Exemple de rejet de pipeline pour CVE critique
+
+Architecture Globale 🏗️¶
+
+[GitLab CI] -> [Build/Lint/Sign/Scan] -> [Registry] -> [Kubernetes (Kind)]  -> Minecraft Server
+Étapes du Projet 🔍¶
+Exemple d'infrastructure Kubernetes locale (Kind)¶
+cluster.yml
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  extraPortMappings:
+  - containerPort: 30001
+    hostPort: 25565
+GitLab Runner dans le Cluster¶
+Tip
+
+Pour pouvoir déployer depuis Gitlab, il faut un gitlab runner dans votre cluster. ⚠ Avant l'installation, il faut register le Runner dans votre projet. Settings > CI/CD > Runners > Décochez Enable instance runners for this project > Cliquer sur New Projet Runner > Dans Tags mettre Kubernetes > Cliquer sur Create Runner > Copier le token et le mettre dans la commande Helm.
+
+
+helm install gitlab-runner gitlab/gitlab-runner \
+  --set rbac.create=true \
+  --namespace gitlab-runner \
+  --create-namespace \
+  --set serviceAccount.create=true \
+  --set gitlabUrl=https://gitlab.com \
+  --set runnerToken=xxxx
+Ensuite vous devriez voir votre Runner dans l'interface Runners.
+RBAC Pour la CI¶
+Tip
+
+Créé votre namespace minecraft avant d'appliquer le fichier
+
+minecraft-rbac.yml
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ci-deployer
+  namespace: minecraft
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ci-deployer
+  namespace: minecraft
+rules:
+- apiGroups: ["", "apps"]
+  resources:
+    - pods
+    - services
+    - configmaps
+    - secrets
+    - deployments
+    - replicasets
+  verbs:
+    - get
+    - list
+    - watch
+    - create
+    - update
+    - patch
+    - delete
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ci-deployer
+  namespace: minecraft
+subjects:
+- kind: ServiceAccount
+  name: ci-deployer
+  namespace: minecraft
+roleRef:
+  kind: Role
+  name: ci-deployer
+  apiGroup: rbac.authorization.k8s.io
+Ensuite il faut créer le token du serviceAccount pour pouvoir déployer dans Kubernetes.
+
+# Récupérer le token automatiquement généré
+kubectl create token ci-deployer -n minecraft
+
+Stocker le token dans un Secret GitLab (Settings -> CI/CD -> Variables)
+Nom : CI_DEPLOY_TOKEN_K8S
+# Valeur : contenu du fichier ci-deployer-token
+# Options : Protected, Masked
+Dockerfile sécurisé¶
+Créer un Dockerfile tout simple qui permet de lancer un serveur minecraft
+
+FROM itzg/minecraft-server
+Déploiement Kubernetes¶
+Pour créer un pod il faut créer un déploiement qui permet de spécifier l'image, les ressources etc...
+
+minecraft-deploy.yml
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minecraft
+  namespace: minecraft
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minecraft
+  template:
+    metadata:
+      labels:
+        app: minecraft
+    spec:
+      serviceAccountName: ci-deployer
+      containers:
+        - name: minecraft
+          image: itzg/minecraft-server:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 25565
+          env:
+            - name: EULA
+              value: "TRUE"
+            - name: VERSION
+              value: "LATEST"
+            - name: DIFFICULTY
+              value: "easy"
+            - name: MODE
+              value: "survival"
+            - name: MOTD
+              value: "ECE 2026 - Server!"
+            - name: LEVEL_TYPE
+              value: "DEFAULT"
+            - name: LEVEL
+              value: "world"
+            - name: MEMORY
+              value: "1024M"
+            - name: ENABLE_RCON
+              value: "false"
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "1"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mc-access
+spec:
+  type: NodePort
+......
+⚠ Faite en sorte d'accéder depuis votre PC à votre serveur minecraft (il faut completer être créer une autre ressource...)
+Pipeline GitLab CI¶
+Tip
+
+Reprenez de la conf de la session 4 ! Et pour la stage deploy je vous donne un exemple à adapter
+
+.gitlab-ci.yml
+
+stages:
+  - lint
+  - build
+  - scan
+  - verify
+  - deploy
+  .
+  .
+  .
+  .
+  .
+deploy:
+  stage: deploy
+  image: alpine:3.23
+  before_script:
+    - apk add --no-cache curl
+    - curl -LO https://dl.k8s.io/release/v1.29.2/bin/linux/amd64/kubectl
+    - install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+    - |
+        cat <<EOF > kubeconfig
+        apiVersion: v1
+        kind: Config
+        clusters:
+        - name: kind-cluster
+          cluster:
+            certificate-authority-data: $(cat /var/run/secrets/kubernetes.io/serviceaccount/ca.crt | base64 | tr -d '\n')
+            server: https://kubernetes.default.svc
+        contexts:
+        - name: ci-deployer@kind-cluster
+          context:
+            cluster: kind-cluster
+            namespace: minecraft
+            user: ci-deployer
+        current-context: ci-deployer@kind-cluster
+        users:
+        - name: ci-deployer
+          user:
+            token: $CI_DEPLOY_TOKEN_K8S
+        EOF
+
+  script:
+    - kubectl --kubeconfig=kubeconfig apply -f minecraft-deploy.yml
+  tags:
+    - kubernetes
+Points Bonus ✨¶
+Network Policies : Restreindre l'accès au pod Minecraft 3 points
+
+Vault Integration : Gérer les secrets du serveur (mot de passe RCON) 5 points
+
+Falco Monitoring : Détecter les tentatives de cheat in-game 3 points
+
+Auto-scaling : Scale up/down avec HPA selon le nombre de joueurs 10 points
