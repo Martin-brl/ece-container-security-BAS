@@ -1,0 +1,67 @@
+Voici la réponse attendue, claire et directe 👇
+
+---
+
+## ❌ Problème
+
+Le développeur a **intégré la clé API dans l’image Docker** (Dockerfile / build).
+👉 Résultat : la clé est visible dans `docker history` → fuite de secret.
+
+---
+
+## ✅ Ce qu’il aurait dû faire
+
+### 1️⃣ Ne jamais mettre de secrets dans le Dockerfile
+
+❌ À éviter :
+
+```Dockerfile
+ENV API_KEY=123456
+RUN curl https://api.com?key=123456
+```
+
+---
+
+### 2️⃣ Injecter les secrets au runtime
+
+✔️ Bonne pratique :
+
+```bash
+docker run -e API_KEY=123456 monimage
+```
+
+👉 La clé n’est **pas stockée dans l’image**, seulement en mémoire au lancement.
+
+---
+
+### 3️⃣ Utiliser un gestionnaire de secrets
+
+✔️ Idéal (et lien avec ton TP précédent) :
+
+* HashiCorp Vault
+* Docker secrets
+* Kubernetes secrets
+
+👉 L’application récupère la clé **dynamiquement** au démarrage.
+
+---
+
+### 4️⃣ Éviter les traces dans les layers
+
+Même si supprimé ensuite :
+
+```Dockerfile
+RUN export API_KEY=123 && rm file
+```
+
+❌ La clé reste dans une couche précédente → toujours récupérable
+
+---
+
+## 🧠 Phrase prête pour ton rapport
+
+> Le développeur aurait dû éviter d’intégrer la clé API dans le Dockerfile ou lors du build de l’image. Les secrets doivent être injectés au moment de l’exécution (runtime) ou gérés via un outil sécurisé comme Vault. Cela empêche leur exposition dans les couches de l’image Docker et protège contre leur récupération par un attaquant.
+
+---
+
+Si tu veux, je peux te faire une **version plus longue ou plus “prof”** selon le niveau attendu 👍
